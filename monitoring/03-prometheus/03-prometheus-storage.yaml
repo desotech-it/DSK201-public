@@ -1,15 +1,13 @@
-kind: PersistentVolumeClaim
 apiVersion: v1
+kind: PersistentVolumeClaim
 metadata:
   name: prometheus-claim
-  namespace: monitoring
 spec:
   accessModes:
-    - ReadWriteMany
-  volumeMode: Filesystem
+    - ReadWriteOnce
+  storageClassName: nfs-storageclass
   resources:
     requests:
-      storage: 20Gi
-  selector: 
-    matchLabels: 
-      volume: prometheus
+      storage: 10Gi
+
+
