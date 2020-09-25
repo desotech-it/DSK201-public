@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  creationTimestamp: null
+  name: nfs-provisioner
+spec: {}
+status: {}
+---
+kind: ServiceAccount
+apiVersion: v1
+metadata:
+  name: nfs-pod-provisioner-sa
+  namespace: nfs-provisioner
+---
+apiVersion: rbac.authorization.k8s.io/v1 # auth API
+kind: ClusterRole # Role of kubernetes
+metadata:
+  name: nfs-provisioner-clusterRole
+rules:
+  - apiGroups: [""] # rules on persistentvolumes
+    resources: ["persistentvolumes"]
+    verbs: ["get", "list", "watch", "create", "delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch", "update"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["events"]
+    verbs: ["create", "update", "patch"]
+---
+kind: Role
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-pod-provisioner-otherRoles
+  namespace: nfs-provisioner
+rules:
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-provisioner-rolebinding
+subjects:
+  - kind: ServiceAccount
+    name: nfs-pod-provisioner-sa # defined on top of file
+    namespace: nfs-provisioner
+roleRef: # binding cluster role to service account
+  kind: ClusterRole
+  name: nfs-provisioner-clusterRole # name defined in clusterRole
+  apiGroup: rbac.authorization.k8s.io
+---
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: nfs-pod-provisioner-otherRoles
+subjects:
+  - kind: ServiceAccount
+    name: nfs-pod-provisioner-sa # same as top of the file
+    # replace with namespace where provisioner is deployed
+    namespace: nfs-provisioner
+roleRef:
+  kind: Role
+  name: nfs-pod-provisioner-otherRoles
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: nfs-pod-provisioner
+  name: nfs-pod-provisioner
+  namespace: nfs-provisioner
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: nfs-pod-provisioner
+  template:
+    metadata:
+      labels:
+        app: nfs-pod-provisioner
+    spec:
+      serviceAccountName: nfs-pod-provisioner-sa # name of service account created in rbac.yaml
+      containers:
+      - image: quay.io/external_storage/nfs-client-provisioner:latest
+        name: nfs-client-provisioner
+        resources: {}
+        volumeMounts:
+          - name: nfs-provisioner-v
+            mountPath: /persistentvolumes
+        env:
+          - name: PROVISIONER_NAME # do not change
+            value: nfs-deso-provisioner # SAME AS PROVISONER NAME VALUE IN STORAGECLASS
+          - name: NFS_SERVER # do not change
+            value: 10.10.99.210 # Ip of the NFS SERVER
+          - name: NFS_PATH # do not change
+            value: /nfs # path to nfs directory setup
+      volumes:
+       - name: nfs-provisioner-v # same as volumemouts name
+         nfs:
+           server: 10.10.99.210
+           path: /nfs
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: nfs-storageclass # IMPORTANT pvc needs to mention this name
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
+provisioner: nfs-deso-provisioner # name can be anything
+parameters:
+  archiveOnDelete: "false"
+  volumeBindingMode: WaitForFirstConsumer
